@@ -213,7 +213,7 @@ select.ifield{appearance:none;-webkit-appearance:none}
       </div>
       <div class="card">
         <div class="ctitle">Pengeluaran bulan ini</div>
-        <div class="chartwrap"><canvas id="chartspend"></canvas></div>
+        <div class="chartwrap" id="chartwrap-spend"></div>
         <div id="legendspend" style="display:flex;flex-wrap:wrap;gap:7px;margin-top:11px;font-size:11px;color:var(--text2)"></div>
       </div>
       <div class="card">
@@ -281,7 +281,7 @@ select.ifield{appearance:none;-webkit-appearance:none}
       </div>
       <div class="card">
         <div class="ctitle">Komposisi portofolio</div>
-        <div class="chartwrap"><canvas id="chartporto"></canvas></div>
+        <div class="chartwrap" id="chartwrap-porto"></div>
         <div id="legendporto" style="display:flex;flex-wrap:wrap;gap:7px;margin-top:11px;font-size:11px;color:var(--text2)"></div>
       </div>
     </div>
@@ -460,6 +460,9 @@ var detailTxId=null;
 var invMode='setor';
 var chartPorto=null;
 var chartSpend=null;
+
+// Nonaktifkan animasi Chart.js agar tidak konflik saat canvas di-recreate
+Chart.defaults.animation = false;
 
 function getData(){
   try{
@@ -827,19 +830,35 @@ function renderSpendChart(txs){
   var cats={};txs.forEach(function(t){cats[t.cat]=(cats[t.cat]||0)+t.amount;});
   var labels=Object.keys(cats);var vals=Object.values(cats);
   var colors=labels.map(function(l){return CATCOLOR[l]||'#9090A8';});
+
+  // Selalu destroy chart lama dulu
   if(chartSpend){chartSpend.destroy();chartSpend=null;}
-  var canvas=document.getElementById('chartspend');
-  if(!canvas)return;
+
+  // Pastikan canvas selalu ada — recreate kalau hilang karena innerHTML
+  var wrap=document.getElementById('chartwrap-spend');
+  if(!wrap)return;
+  wrap.innerHTML='';
+  var leg=document.getElementById('legendspend');if(leg)leg.innerHTML='';
+
   if(!labels.length){
-    var w=canvas.parentElement;w.innerHTML='';
     var emp=document.createElement('div');emp.className='empty';emp.style.height='170px';
     var ico=document.createElement('div');ico.className='emptyico';ico.textContent='📊';
     var txt=document.createElement('div');txt.textContent='Catat pengeluaran untuk lihat grafik';
-    emp.appendChild(ico);emp.appendChild(txt);w.appendChild(emp);
-    var ls=document.getElementById('legendspend');if(ls)ls.innerHTML='';return;
+    emp.appendChild(ico);emp.appendChild(txt);wrap.appendChild(emp);
+    return;
   }
-  chartSpend=new Chart(canvas,{type:'doughnut',data:{labels:labels,datasets:[{data:vals,backgroundColor:colors,borderWidth:0,hoverOffset:4}]},options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return' Rp '+fmt(ctx.raw);}}}}}});
-  var leg=document.getElementById('legendspend');if(!leg)return;leg.innerHTML='';
+
+  var canvas=document.createElement('canvas');
+  canvas.id='chartspend';
+  wrap.appendChild(canvas);
+
+  chartSpend=new Chart(canvas,{
+    type:'doughnut',
+    data:{labels:labels,datasets:[{data:vals,backgroundColor:colors,borderWidth:0,hoverOffset:4}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return' Rp '+fmt(ctx.raw);}}}}}
+  });
+
+  if(!leg)return;
   labels.forEach(function(l,i){
     var span=document.createElement('span');span.style.cssText='display:flex;align-items:center;gap:4px';
     var dot=document.createElement('span');dot.style.cssText='width:9px;height:9px;border-radius:2px;background:'+colors[i];
@@ -930,17 +949,29 @@ function renderInvest(data){
   var pVals=INVKEYS.map(function(k){return data.invest[k]||0;});
   var pColors=INVKEYS.map(function(k){return INVCOLOR[k];});
   if(chartPorto){chartPorto.destroy();chartPorto=null;}
-  var cp=document.getElementById('chartporto');
-  if(cp&&pVals.some(function(v){return v>0;})){
-    chartPorto=new Chart(cp,{type:'doughnut',data:{labels:INVKEYS.map(function(k){return INVNAMES[k];}),datasets:[{data:pVals,backgroundColor:pColors,borderWidth:0,hoverOffset:4}]},options:{responsive:true,maintainAspectRatio:false,cutout:'65%',plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return' Rp '+fmt(ctx.raw);}}}}}});
+  var cpWrap=document.getElementById('chartwrap-porto');
+  if(cpWrap){
+    cpWrap.innerHTML='';
+    var leg=document.getElementById('legendporto');if(leg)leg.innerHTML='';
+    if(pVals.some(function(v){return v>0;})){
+      var cpCanvas=document.createElement('canvas');
+      cpWrap.appendChild(cpCanvas);
+      chartPorto=new Chart(cpCanvas,{type:'doughnut',data:{labels:INVKEYS.map(function(k){return INVNAMES[k];}),datasets:[{data:pVals,backgroundColor:pColors,borderWidth:0,hoverOffset:4}]},options:{responsive:true,maintainAspectRatio:false,cutout:'65%',plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return' Rp '+fmt(ctx.raw);}}}}}});
+    } else {
+      var emp=document.createElement('div');emp.className='empty';emp.style.height='170px';
+      var ico=document.createElement('div');ico.className='emptyico';ico.textContent='📊';
+      var txt=document.createElement('div');txt.textContent='Belum ada investasi';
+      emp.appendChild(ico);emp.appendChild(txt);cpWrap.appendChild(emp);
+    }
+    if(leg){
+      INVKEYS.forEach(function(k,i){
+        var span=document.createElement('span');span.style.cssText='display:flex;align-items:center;gap:4px';
+        var dot=document.createElement('span');dot.style.cssText='width:9px;height:9px;border-radius:2px;background:'+INVCOLOR[k];
+        span.appendChild(dot);span.appendChild(document.createTextNode(INVNAMES[k]+' '+fmtS(pVals[i])));
+        leg.appendChild(span);
+      });
+    }
   }
-  var leg=document.getElementById('legendporto');leg.innerHTML='';
-  INVKEYS.forEach(function(k,i){
-    var span=document.createElement('span');span.style.cssText='display:flex;align-items:center;gap:4px';
-    var dot=document.createElement('span');dot.style.cssText='width:9px;height:9px;border-radius:2px;background:'+INVCOLOR[k];
-    span.appendChild(dot);span.appendChild(document.createTextNode(INVNAMES[k]+' '+fmtS(pVals[i])));
-    leg.appendChild(span);
-  });
 }
 function renderSummary(data,GAJI,keluar,kwjBulan,totalInv){
   var el=document.getElementById('sumlist');el.innerHTML='';
